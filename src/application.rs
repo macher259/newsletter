@@ -1,6 +1,7 @@
 use std::net::TcpListener;
 
 use actix_web::{dev::Server, App, HttpServer};
+use tracing_actix_web::TracingLogger;
 
 use crate::configuration::Settings;
 use crate::routes::healthcheck;
@@ -34,9 +35,13 @@ impl Application {
 }
 
 async fn run(listener: TcpListener) -> Result<Server, anyhow::Error> {
-    let server = HttpServer::new(|| App::new().service(healthcheck))
-        .listen(listener)?
-        .run();
+    let server = HttpServer::new(|| {
+        App::new()
+            .wrap(TracingLogger::default())
+            .service(healthcheck)
+    })
+    .listen(listener)?
+    .run();
 
     Ok(server)
 }
