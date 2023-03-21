@@ -1,0 +1,36 @@
+version: "3.9"
+services:
+  database:
+      # TODO add ssl
+    image: postgres
+    container_name: database
+    restart: always
+    ports: 
+      - 5432:5432
+    user: ${POSTGRES_USER}
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready"]
+      interval: 6s
+      timeout: 3s
+      retries: 5
+  app:
+    container_name: newsletter
+    build: 
+      context: .
+      dockerfile: Dockerfile
+    ports: 
+      - 8000:8000
+    environment:
+      - POSTGRES_HOST=database
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB}
+      - DATABASE_URL=${DATABASE_URL}
+    restart: always
+    depends_on:
+      database: 
+        condition: service_healthy
