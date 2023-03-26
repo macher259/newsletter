@@ -1,10 +1,11 @@
 use actix_web::rt::spawn;
 use argon2::{password_hash::SaltString, Algorithm, Argon2, Params, PasswordHasher, Version};
 use newsletter::{
-    application::get_conntection_pool,
+    application::get_connection_pool,
     application::Application,
     configuration::{get_configuration, DatabaseSettings},
     email_client::EmailClient,
+    issue_delivery_worker::{try_execute_task, ExecutionOutcome},
     telemetry::{get_subscriber, init_subscriber},
 };
 use once_cell::sync::Lazy;
@@ -133,6 +134,42 @@ impl TestApp {
             .await
             .expect("Failed to execute request.")
     }
+
+    pub async fn dispatch_all_pending_emails(&self) {
+        loop {
+            if let ExecutionOutcome::EmptyQueue =
+                try_execute_task(&self.db_pool, &self.email_client)
+                    .await
+                    .unwrap()
+            {
+                break;
+            }
+        }
+    }
+
+    pub async fn get_publish_newsletter(&self) -> reqwest::Response {
+        self.api_client
+            .get(&format!("{}/admin/newsletters", &self.address))
+            .send()
+            .await
+            .expect("Failed to execute request.")
+    }
+
+    pub async fn get_publish_newsletter_html(&self) -> String {
+        self.get_publish_newsletter().await.text().await.unwrap()
+    }
+
+    pub async fn post_publish_newsletter<Body>(&self, body: &Body) -> reqwest::Response
+    where
+        Body: serde::Serialize,
+    {
+        self.api_client
+            .post(&format!("{}/admin/newsletters", &self.address))
+            .form(body)
+            .send()
+            .await
+            .expect("Failed to execute request.")
+    }
 }
 
 pub async fn spawn_app() -> TestApp {
@@ -169,7 +206,7 @@ pub async fn spawn_app() -> TestApp {
         address: format!("http://localhost:{}", application_port),
         port: application_port,
         api_client: client,
-        db_pool: get_conntection_pool(&configuration.database),
+        db_pool: get_connection_pool(&configuration.database),
         email_server,
         email_client: configuration.email_client.client(),
         test_user: TestUser::generate(),

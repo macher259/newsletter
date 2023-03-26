@@ -18,7 +18,7 @@ use crate::configuration::{DatabaseSettings, Settings};
 use crate::email_client::EmailClient;
 use crate::routes::{
     admin_dashboard, change_password, change_password_form, confirm, healthcheck, home, login,
-    login_form, logout, subscribe,
+    login_form, logout, publish_newsletter, publish_newsletter_form, subscribe,
 };
 
 #[derive(Clone)]
@@ -31,7 +31,7 @@ pub struct Application {
 
 impl Application {
     pub async fn build(configuration: Settings) -> Result<Self, anyhow::Error> {
-        let db_pool = get_conntection_pool(&configuration.database);
+        let db_pool = get_connection_pool(&configuration.database);
         sqlx::migrate!("./migrations").run(&db_pool).await?;
 
         let email_client = configuration.email_client.client();
@@ -65,7 +65,7 @@ impl Application {
     }
 }
 
-pub fn get_conntection_pool(configuration: &DatabaseSettings) -> PgPool {
+pub fn get_connection_pool(configuration: &DatabaseSettings) -> PgPool {
     let timeout = std::time::Duration::from_secs(2);
     PgPoolOptions::new()
         .acquire_timeout(timeout)
@@ -102,7 +102,9 @@ async fn run(
                     .service(admin_dashboard)
                     .service(change_password)
                     .service(change_password_form)
-                    .service(logout),
+                    .service(logout)
+                    .service(publish_newsletter_form)
+                    .service(publish_newsletter),
             )
             .service(healthcheck)
             .service(home)
