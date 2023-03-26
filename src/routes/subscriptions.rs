@@ -8,7 +8,10 @@ use anyhow::Context;
 use rand::{distributions::Alphanumeric, thread_rng, Rng};
 use sqlx::{types::chrono::Utc, types::Uuid, PgPool, Postgres, Transaction};
 
-use crate::domain::{NewSubscriber, SubscriberEmail, SubscriberName};
+use crate::{
+    domain::{NewSubscriber, SubscriberEmail, SubscriberName},
+    email_client::EmailClient,
+};
 
 #[derive(serde::Deserialize)]
 pub struct FormData {
@@ -51,7 +54,7 @@ impl std::fmt::Debug for SubscribeError {
 
 #[tracing::instrument(
     name = "Adding a new subscriber.",
-    skip(form, pool),
+    skip(form, pool, email_client, base_url),
     fields(
         subscriber_email = %form.email,
         subscriber_name = %form.name,
@@ -61,6 +64,8 @@ impl std::fmt::Debug for SubscribeError {
 pub async fn subscribe(
     form: Form<FormData>,
     pool: Data<PgPool>,
+    email_client: Data<EmailClient>,
+    base_url: Data<String>,
 ) -> Result<HttpResponse, SubscribeError> {
     let new_subscriber = form.0.try_into().map_err(SubscribeError::ValidationError)?;
     let mut transaction = pool
@@ -80,16 +85,43 @@ pub async fn subscribe(
         .commit()
         .await
         .context("Failed to commit Postgres transaction to store a new subscriber.")?;
-    send_confirmation_email()
-        .await
-        .context("Failed to send a confirmation email.")?;
+    send_confirmation_email(
+        &email_client,
+        new_subscriber,
+        &base_url,
+        &subscription_token,
+    )
+    .await
+    .context("Failed to send a confirmation email.")?;
 
     Ok(HttpResponse::Ok().finish())
 }
 
-#[tracing::instrument(name = "Send a confirmation email to a new subscriber.")]
-pub async fn send_confirmation_email() -> Result<(), anyhow::Error> {
-    Ok(())
+#[tracing::instrument(
+    name = "Send a confirmation email to a new subscriber.",
+    skip(email_client, new_subscriber, base_url, subscription_token)
+)]
+pub async fn send_confirmation_email(
+    email_client: &EmailClient,
+    new_subscriber: NewSubscriber,
+    base_url: &str,
+    subscription_token: &str,
+) -> Result<(), reqwest::Error> {
+    let confirmation_link = format!(
+        "{}/subscriptions/confirm?subscription_token={}",
+        base_url, subscription_token
+    );
+    let plain_body = format!(
+        "Welcome to our newsletter!\nVisit {} to confirm your subscription.",
+        confirmation_link
+    );
+    let html_body = format!(
+        "Welcome to our newsletter!<br />Click <a href=\"{}\">here</a> to confirm your subscription.",
+        confirmation_link
+    );
+    email_client
+        .send_email(&new_subscriber.email, "Welcome!", &html_body, &plain_body)
+        .await
 }
 
 #[tracing::instrument(

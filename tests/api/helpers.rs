@@ -2,10 +2,12 @@ use newsletter::{
     application::get_conntection_pool,
     application::Application,
     configuration::{get_configuration, DatabaseSettings},
+    email_client::EmailClient,
     telemetry::{get_subscriber, init_subscriber},
 };
 use once_cell::sync::Lazy;
 use sqlx::{types::Uuid, Connection, Executor, PgConnection, PgPool};
+use wiremock::MockServer;
 
 static TRACING: Lazy<()> = Lazy::new(|| {
     if std::env::var("TEST_LOG").is_ok() {
@@ -20,6 +22,13 @@ pub struct TestApp {
     pub port: u16,
     pub api_client: reqwest::Client,
     pub db_pool: PgPool,
+    pub email_client: EmailClient,
+    pub email_server: MockServer,
+}
+
+pub struct ConfirmationLinks {
+    pub html: reqwest::Url,
+    pub plain_text: reqwest::Url,
 }
 
 impl TestApp {
@@ -32,10 +41,34 @@ impl TestApp {
             .await
             .expect("Failed to execute request.")
     }
+
+    pub fn get_confirmation_links(&self, email_request: &wiremock::Request) -> ConfirmationLinks {
+        let body: serde_json::Value = serde_json::from_slice(&email_request.body).unwrap();
+
+        let get_link = |s: &str| {
+            let links: Vec<_> = linkify::LinkFinder::new()
+                .links(s)
+                .filter(|l| *l.kind() == linkify::LinkKind::Url)
+                .collect();
+            assert_eq!(links.len(), 1);
+            let raw_link = links[0].as_str().to_owned();
+            let mut confirmation_link = reqwest::Url::parse(&raw_link).unwrap();
+            // Let's make sure we don't call random APIs on the web.
+            assert_eq!(confirmation_link.host_str().unwrap(), "127.0.0.1");
+            confirmation_link.set_port(Some(self.port)).unwrap();
+            confirmation_link
+        };
+
+        let html = get_link(body["HtmlBody"].as_str().unwrap());
+        let plain_text = get_link(body["TextBody"].as_str().unwrap());
+        ConfirmationLinks { html, plain_text }
+    }
 }
 
 pub async fn spawn_app() -> TestApp {
     Lazy::force(&TRACING);
+
+    let email_server = MockServer::start().await;
 
     let configuration = {
         let mut conf = get_configuration().expect("Failed to read configuration.");
@@ -43,6 +76,8 @@ pub async fn spawn_app() -> TestApp {
         conf.application.port = 0;
         // Use a different database for each test case.
         conf.database.database_name = Uuid::new_v4().to_string();
+        // Use the mock server as email API.
+        conf.email_client.base_url = email_server.uri();
         conf
     };
 
@@ -61,6 +96,8 @@ pub async fn spawn_app() -> TestApp {
         port: application_port,
         api_client: client,
         db_pool: get_conntection_pool(&configuration.database),
+        email_server,
+        email_client: configuration.email_client.client(),
     };
 
     test_app
