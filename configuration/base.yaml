@@ -1,6 +1,7 @@
 application:
-  port: 8000
+  port: 8088
   host: 0.0.0.0
+  hmac_secret: "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Aliquam egestas quam eget orci iaculis, ut dignissim augue ornare eros."
 database:
   host: "localhost"
   port: 5432
@@ -13,3 +14,4 @@ email_client:
   sender_email: "test@gmail.com"
   authorization_token: "my-secret-token"
   timeout_milliseconds: 10000
+redis_uri: "redis://127.0.0.1:6379"

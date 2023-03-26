@@ -17,6 +17,11 @@ services:
       interval: 6s
       timeout: 3s
       retries: 5
+  redis:
+    image: redis
+    restart: always
+    ports:
+      - 6379:6379
   app:
     container_name: newsletter
     build: 
@@ -34,3 +39,5 @@ services:
     depends_on:
       database: 
         condition: service_healthy
+      redis:
+        condition: service_started

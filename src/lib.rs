@@ -1,7 +1,9 @@
 pub mod application;
+pub mod authentication;
 pub mod configuration;
 pub mod domain;
 pub mod email_client;
 pub mod routes;
+pub mod session;
 pub mod telemetry;
 pub mod utils;
